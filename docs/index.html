@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Request Access — CSA.Skills</title>
+  <style>
+    :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --blue: #58a6ff; --green: #3fb950; --red: #f85149; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 2.5rem; max-width: 480px; width: 90%; text-align: center; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+    .steps { text-align: left; margin: 1.5rem 0; padding: 1rem 1.25rem; background: var(--bg); border-radius: 8px; font-size: 0.9rem; line-height: 1.8; }
+    .steps li { color: var(--muted); }
+    .btn { display: inline-block; padding: 0.75rem 1.5rem; background: var(--green); color: #fff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.9; }
+    .note { margin-top: 1.25rem; font-size: 0.8rem; color: var(--muted); }
+    .note a { color: var(--blue); text-decoration: none; }
+
+    /* Result messages (shown via query params) */
+    .msg { padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.95rem; display: none; }
+    .msg.success { display: block; background: #0d2818; border: 1px solid var(--green); color: var(--green); }
+    .msg.error { display: block; background: #2d1114; border: 1px solid var(--red); color: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="msg"></div>
+    <h1>🔐 Request Repository Access</h1>
+    <p class="subtitle">CSA.Skills — Private Repository</p>
+
+    <ol class="steps">
+      <li>Click the button below to sign in with GitHub</li>
+      <li>We'll verify you have a <strong>@microsoft.com</strong> email</li>
+      <li>If verified, you'll receive a collaborator invite automatically</li>
+    </ol>
+
+    <!-- REPLACE_WORKER_URL with your actual Cloudflare Worker URL after deployment -->
+    <a class="btn" id="authBtn" href="REPLACE_WORKER_URL/auth">
+      Sign in with GitHub
+    </a>
+
+    <p class="note">
+      After approval, check your
+      <a href="https://github.com/notifications">GitHub notifications</a>
+      or <a href="https://github.com/mcaps-csa/CSA.Skills/invitations">pending invitations</a>
+      to accept.
+    </p>
+  </div>
+
+  <script>
+    // Display result messages from redirect query params
+    const params = new URLSearchParams(window.location.search);
+    const msgEl = document.getElementById('msg');
+    if (params.get('success')) {
+      msgEl.className = 'msg success';
+      msgEl.textContent = decodeURIComponent(params.get('success'));
+    } else if (params.get('error')) {
+      msgEl.className = 'msg error';
+      msgEl.textContent = decodeURIComponent(params.get('error'));
+    }
+  </script>
+</body>
+</html>

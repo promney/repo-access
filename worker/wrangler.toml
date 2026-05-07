@@ -1,0 +1,13 @@
+name = "repo-access"
+main = "index.js"
+compatibility_date = "2024-12-01"
+
+# After first deploy, update WORKER_URL in secrets to match your *.workers.dev URL
+# Then update the GitHub OAuth App callback URL to: https://repo-access.YOUR-SUBDOMAIN.workers.dev/callback
+
+# Secrets (set via `npx wrangler secret put <NAME>`):
+#   GITHUB_CLIENT_ID
+#   GITHUB_CLIENT_SECRET
+#   GITHUB_PAT
+#   PAGES_URL
+#   WORKER_URL
