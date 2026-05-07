@@ -4,7 +4,7 @@
  * Layered verification:
  *   1. GitHub OAuth — captures username + checks for @microsoft.com email
  *   2. If no @microsoft.com email found, falls back to Microsoft Entra sign-in
- * If either check passes, the user is auto-invited as a collaborator.
+ * If either check passes, the user is auto-invited AND auto-accepted as a collaborator.
  * If both fail, the user is directed to contact the admin for manual invite.
  *
  * Environment variables (set as Worker secrets):
@@ -40,7 +40,7 @@ function handleGitHubAuth(env) {
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: `${workerUrl(env)}/callback`,
-    scope: 'user:email',
+    scope: 'user:email repo:invite',
     state,
   });
 
@@ -94,7 +94,7 @@ async function handleGitHubCallback(url, request, env) {
 
     if (hasMsEmail) {
       // Email verified — skip Entra, invite directly
-      return inviteCollaborator(user.login, 'Microsoft email verified', env, pagesUrl);
+      return inviteCollaborator(user.login, 'Microsoft email verified', env, pagesUrl, tokenData.access_token);
     }
 
     // No @microsoft.com email — redirect to Microsoft Entra sign-in
@@ -115,6 +115,7 @@ async function handleGitHubCallback(url, request, env) {
       headers: new Headers([
         ['Location', `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${msParams}`],
         ['Set-Cookie', cookie('gh_username', user.login)],
+        ['Set-Cookie', cookie('gh_token', tokenData.access_token)],
         ['Set-Cookie', cookie('ms_state', msState)],
       ]),
     });
@@ -129,9 +130,10 @@ async function handleMsCallback(url, request, env) {
   const code = url.searchParams.get('code');
   const pagesUrl = env.PAGES_URL || 'https://promney.github.io/repo-access';
 
-  // Recover GitHub username from cookie
+  // Recover GitHub username and token from cookies
   const cookies = parseCookies(request.headers.get('Cookie') || '');
   const username = cookies['gh_username'];
+  const ghToken = cookies['gh_token'];
 
   if (!code) {
     const errorDesc = url.searchParams.get('error_description') || 'Microsoft sign-in was cancelled or failed.';
@@ -179,16 +181,16 @@ async function handleMsCallback(url, request, env) {
 
     // Verified! Invite the GitHub user as a collaborator
     const msName = claims.name || claims.preferred_username || 'Microsoft user';
-    return inviteCollaborator(username, `Verified as ${msName}`, env, pagesUrl);
+    return inviteCollaborator(username, `Verified as ${msName}`, env, pagesUrl, ghToken);
   } catch (e) {
     return redirect(pagesUrl, 'error',
       `Microsoft verification error: ${e.message}. Please contact ${ADMIN_EMAIL} for a manual invite.`);
   }
 }
 
-// ─── Shared: invite a GitHub user as collaborator ─────────────────────────────
+// ─── Shared: invite a GitHub user as collaborator and auto-accept ─────────────
 
-async function inviteCollaborator(username, verifyLabel, env, pagesUrl) {
+async function inviteCollaborator(username, verifyLabel, env, pagesUrl, userToken) {
   const inviteRes = await fetch(
     `https://api.github.com/repos/${TARGET_OWNER}/${TARGET_REPO}/collaborators/${username}`,
     {
@@ -204,6 +206,35 @@ async function inviteCollaborator(username, verifyLabel, env, pagesUrl) {
   );
 
   if (inviteRes.status === 201) {
+    // Invitation created — try to auto-accept on the user's behalf
+    let autoAccepted = false;
+    if (userToken) {
+      try {
+        const inviteData = await inviteRes.json();
+        if (inviteData.id) {
+          const acceptRes = await fetch(
+            `https://api.github.com/user/repository_invitations/${inviteData.id}`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${userToken}`,
+                Accept: 'application/vnd.github+json',
+                'User-Agent': 'repo-access-worker',
+                'X-GitHub-Api-Version': '2022-11-28',
+              },
+            }
+          );
+          autoAccepted = (acceptRes.status === 204);
+        }
+      } catch {
+        // Auto-accept failed — fall back to manual accept
+      }
+    }
+
+    if (autoAccepted) {
+      return redirect(pagesUrl, 'success',
+        `✅ ${verifyLabel}. You now have access to ${TARGET_OWNER}/${TARGET_REPO}!`);
+    }
     return redirect(pagesUrl, 'success',
       `✅ ${verifyLabel}. Invite sent to GitHub user "${username}"! Check your GitHub notifications to accept.`);
   } else if (inviteRes.status === 204) {
