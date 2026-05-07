@@ -11,8 +11,7 @@
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 2.5rem; max-width: 480px; width: 90%; text-align: center; }
     h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
     .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
-    .steps { text-align: left; margin: 1.5rem 0; padding: 1rem 1.25rem; background: var(--bg); border-radius: 8px; font-size: 0.9rem; line-height: 1.8; }
-    .steps li { color: var(--muted); }
+    .steps { text-align: left; margin: 1.5rem 0; padding: 1rem 1.25rem; background: var(--bg); border-radius: 8px; font-size: 0.9rem; line-height: 1.8; color: var(--muted); }
     .btn { display: inline-block; padding: 0.75rem 1.5rem; background: var(--green); color: #fff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: opacity 0.2s; }
     .btn:hover { opacity: 0.9; }
     .note { margin-top: 1.25rem; font-size: 0.8rem; color: var(--muted); }
@@ -27,14 +26,14 @@
 <body>
   <div class="card">
     <div id="msg"></div>
-    <h1>🔐 Request Repository Access</h1>
-    <p class="subtitle">CSA.Skills — Private Repository</p>
+    <h1>🔐 CSA.Skills Repository Access</h1>
+    <p class="subtitle">This repository is only available to Microsoft employees.</p>
 
-    <ol class="steps">
-      <li>Click the button below to sign in with your <strong>personal</strong> GitHub account (not your _microsoft EMU account)</li>
-      <li>You'll then be asked to sign in with your <strong>Microsoft corporate account</strong> to verify your identity</li>
-      <li>If verified, you'll receive a collaborator invite automatically</li>
-    </ol>
+    <p class="steps">
+      To gain access to the <strong>CSA.Skills</strong> repo, sign in with your
+      <strong>personal GitHub account</strong> (not your EMU account) and verify
+      your Microsoft identity.
+    </p>
 
     <!-- REPLACE_WORKER_URL with your actual Cloudflare Worker URL after deployment -->
     <a class="btn" id="authBtn" href="https://repo-access.promney.workers.dev/auth">
@@ -45,7 +44,8 @@
       After approval, check your
       <a href="https://github.com/notifications">GitHub notifications</a>
       or <a href="https://github.com/mcaps-csa/CSA.Skills/invitations">pending invitations</a>
-      to accept.
+      to accept.<br><br>
+      Having trouble? Contact <a href="mailto:preston.romney@microsoft.com">preston.romney@microsoft.com</a> for a manual invite.
     </p>
   </div>
 

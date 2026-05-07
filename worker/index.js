@@ -1,25 +1,22 @@
 /**
  * Cloudflare Worker — GitHub OAuth + Microsoft Entra ID Access Gate
  *
- * Two-step verification:
- *   1. GitHub OAuth — captures the user's GitHub username
- *   2. Microsoft Entra sign-in — proves they are a Microsoft employee
- * If both succeed, the user is auto-invited as a collaborator.
+ * Layered verification:
+ *   1. GitHub OAuth — captures username + checks for @microsoft.com email
+ *   2. If no @microsoft.com email found, falls back to Microsoft Entra sign-in
+ * If either check passes, the user is auto-invited as a collaborator.
+ * If both fail, the user is directed to contact the admin for manual invite.
  *
  * Environment variables (set as Worker secrets):
- *   GITHUB_CLIENT_ID      — from your GitHub OAuth App
- *   GITHUB_CLIENT_SECRET  — from your GitHub OAuth App
- *   GITHUB_PAT            — PAT with admin access to the target repo
- *   MS_CLIENT_ID          — from your Entra ID App Registration
- *   MS_CLIENT_SECRET      — from your Entra ID App Registration
- *   MS_TENANT_ID          — Microsoft corporate tenant ID
- *   PAGES_URL             — your GitHub Pages URL
- *   WORKER_URL            — this worker's base URL
+ *   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_PAT,
+ *   MS_CLIENT_ID, MS_CLIENT_SECRET, MS_TENANT_ID,
+ *   PAGES_URL, WORKER_URL
  */
 
 const TARGET_OWNER = 'mcaps-csa';
 const TARGET_REPO = 'CSA.Skills';
 const EXPECTED_TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'; // Microsoft corp tenant
+const ADMIN_EMAIL = 'preston.romney@microsoft.com';
 const INVITE_PERMISSION = 'push';
 
 export default {
@@ -56,7 +53,7 @@ function handleGitHubAuth(env) {
   });
 }
 
-// ─── Step 2: GitHub callback — capture username, then redirect to Microsoft ───
+// ─── Step 2: GitHub callback — check email first, fall back to Entra ─────────
 
 async function handleGitHubCallback(url, request, env) {
   const code = url.searchParams.get('code');
@@ -89,7 +86,18 @@ async function handleGitHubCallback(url, request, env) {
       return redirect(pagesUrl, 'error', 'Could not determine your GitHub username.');
     }
 
-    // Store username in a cookie and redirect to Microsoft sign-in
+    // Check if the user has a verified @microsoft.com email
+    const emailRes = await ghApi('https://api.github.com/user/emails', tokenData.access_token);
+    const emails = await emailRes.json();
+    const hasMsEmail = Array.isArray(emails) &&
+      emails.some(e => e.verified && e.email.toLowerCase().endsWith('@microsoft.com'));
+
+    if (hasMsEmail) {
+      // Email verified — skip Entra, invite directly
+      return inviteCollaborator(user.login, 'Microsoft email verified', env, pagesUrl);
+    }
+
+    // No @microsoft.com email — redirect to Microsoft Entra sign-in
     const msState = crypto.randomUUID();
     const msParams = new URLSearchParams({
       client_id: env.MS_CLIENT_ID,
@@ -127,7 +135,8 @@ async function handleMsCallback(url, request, env) {
 
   if (!code) {
     const errorDesc = url.searchParams.get('error_description') || 'Microsoft sign-in was cancelled or failed.';
-    return redirect(pagesUrl, 'error', errorDesc);
+    return redirect(pagesUrl, 'error',
+      `${errorDesc} If you believe this is an error, please contact ${ADMIN_EMAIL} for a manual invite.`);
   }
   if (!username) {
     return redirect(pagesUrl, 'error', 'Session expired. Please start over.');
@@ -151,49 +160,58 @@ async function handleMsCallback(url, request, env) {
     const tokenData = await tokenRes.json();
 
     if (tokenData.error || !tokenData.id_token) {
-      return redirect(pagesUrl, 'error', `Microsoft auth error: ${tokenData.error_description || tokenData.error}`);
+      return redirect(pagesUrl, 'error',
+        `Microsoft auth error: ${tokenData.error_description || tokenData.error}. Please contact ${ADMIN_EMAIL} for a manual invite.`);
     }
 
     // Decode the ID token (JWT) to verify the tenant
     const claims = decodeJwt(tokenData.id_token);
     if (!claims) {
-      return redirect(pagesUrl, 'error', 'Could not verify Microsoft identity.');
+      return redirect(pagesUrl, 'error',
+        `Could not verify Microsoft identity. Please contact ${ADMIN_EMAIL} for a manual invite.`);
     }
 
     if (claims.tid !== EXPECTED_TENANT) {
-      return redirect(pagesUrl, 'error', 'Access denied. You must sign in with a Microsoft corporate account.');
+      return redirect(pagesUrl, 'error',
+        `We could not verify you as a Microsoft employee. Please contact ${ADMIN_EMAIL} for a manual invite.`);
     }
 
     // Verified! Invite the GitHub user as a collaborator
-    const inviteRes = await fetch(
-      `https://api.github.com/repos/${TARGET_OWNER}/${TARGET_REPO}/collaborators/${username}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${env.GITHUB_PAT}`,
-          Accept: 'application/vnd.github+json',
-          'User-Agent': 'repo-access-worker',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-        body: JSON.stringify({ permission: INVITE_PERMISSION }),
-      }
-    );
-
     const msName = claims.name || claims.preferred_username || 'Microsoft user';
-
-    if (inviteRes.status === 201) {
-      return redirect(pagesUrl, 'success',
-        `✅ Verified as ${msName}. Invite sent to GitHub user "${username}"! Check your GitHub notifications to accept.`);
-    } else if (inviteRes.status === 204) {
-      return redirect(pagesUrl, 'success',
-        `${username} already has access to ${TARGET_OWNER}/${TARGET_REPO}.`);
-    } else {
-      const err = await inviteRes.json().catch(() => ({}));
-      return redirect(pagesUrl, 'error',
-        `Verified as ${msName}, but invite failed (HTTP ${inviteRes.status}): ${err.message || 'Unknown error'}`);
-    }
+    return inviteCollaborator(username, `Verified as ${msName}`, env, pagesUrl);
   } catch (e) {
-    return redirect(pagesUrl, 'error', `Microsoft verification error: ${e.message}`);
+    return redirect(pagesUrl, 'error',
+      `Microsoft verification error: ${e.message}. Please contact ${ADMIN_EMAIL} for a manual invite.`);
+  }
+}
+
+// ─── Shared: invite a GitHub user as collaborator ─────────────────────────────
+
+async function inviteCollaborator(username, verifyLabel, env, pagesUrl) {
+  const inviteRes = await fetch(
+    `https://api.github.com/repos/${TARGET_OWNER}/${TARGET_REPO}/collaborators/${username}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_PAT}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'repo-access-worker',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({ permission: INVITE_PERMISSION }),
+    }
+  );
+
+  if (inviteRes.status === 201) {
+    return redirect(pagesUrl, 'success',
+      `✅ ${verifyLabel}. Invite sent to GitHub user "${username}"! Check your GitHub notifications to accept.`);
+  } else if (inviteRes.status === 204) {
+    return redirect(pagesUrl, 'success',
+      `${username} already has access to ${TARGET_OWNER}/${TARGET_REPO}.`);
+  } else {
+    const err = await inviteRes.json().catch(() => ({}));
+    return redirect(pagesUrl, 'error',
+      `${verifyLabel}, but invite failed (HTTP ${inviteRes.status}): ${err.message || 'Unknown error'}. Please contact ${ADMIN_EMAIL}.`);
   }
 }
 
