@@ -15,8 +15,7 @@
 
 const TARGET_OWNER = 'mcaps-csa';
 const TARGET_REPO = 'CSA.Skills';
-const MS_CORP_TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'; // Microsoft corp tenant for validation
-const AUTH_TENANT = 'organizations'; // multi-tenant: users sign in with their home tenant
+const DEFAULT_TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'; // fallback only
 const ADMIN_EMAIL = 'preston.romney@microsoft.com';
 const INVITE_PERMISSION = 'push';
 
@@ -109,7 +108,7 @@ async function handleGitHubCallback(url, request, env) {
       prompt: 'select_account',
     });
 
-    const tenantId = AUTH_TENANT;
+    const tenantId = env.MS_TENANT_ID || DEFAULT_TENANT;
 
     return new Response(null, {
       status: 302,
@@ -144,10 +143,10 @@ async function handleMsCallback(url, request, env) {
   }
 
   try {
-    const tokenTenant = AUTH_TENANT;
+    const tenantId = env.MS_TENANT_ID || DEFAULT_TENANT;
 
     // Exchange code for token
-    const tokenRes = await fetch(`https://login.microsoftonline.com/${tokenTenant}/oauth2/v2.0/token`, {
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -172,8 +171,7 @@ async function handleMsCallback(url, request, env) {
         `Could not verify Microsoft identity. Please contact ${ADMIN_EMAIL} for a manual invite.`);
     }
 
-    // Validate: tid must match Microsoft corp tenant
-    const expectedTenant = env.MS_TENANT_ID || MS_CORP_TENANT;
+    const expectedTenant = env.MS_TENANT_ID || DEFAULT_TENANT;
     if (claims.tid !== expectedTenant) {
       return redirect(pagesUrl, 'error',
         `We could not verify you as a Microsoft employee. Please contact ${ADMIN_EMAIL} for a manual invite.`);
