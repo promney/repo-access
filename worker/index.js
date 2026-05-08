@@ -17,6 +17,7 @@ const TARGET_OWNER = 'mcaps-csa';
 const TARGET_REPO = 'CSA.Skills';
 const DEFAULT_TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'; // fallback only
 const ADMIN_EMAIL = 'preston.romney@microsoft.com';
+const REPO_URL = `https://github.com/${TARGET_OWNER}/${TARGET_REPO}`;
 const INVITE_PERMISSION = 'push';
 
 export default {
@@ -232,14 +233,14 @@ async function inviteCollaborator(username, verifyLabel, env, pagesUrl, userToke
     }
 
     if (autoAccepted) {
-      return redirect(pagesUrl, 'success',
-        `✅ ${verifyLabel}. You now have access to ${TARGET_OWNER}/${TARGET_REPO}!`);
+      // Redirect straight to the repo — they have access now
+      return new Response(null, { status: 302, headers: { Location: REPO_URL } });
     }
     return redirect(pagesUrl, 'success',
       `✅ ${verifyLabel}. Invite sent to GitHub user "${username}"! Check your GitHub notifications to accept.`);
   } else if (inviteRes.status === 204) {
-    return redirect(pagesUrl, 'success',
-      `${username} already has access to ${TARGET_OWNER}/${TARGET_REPO}.`);
+    // Already has access — send them to the repo
+    return new Response(null, { status: 302, headers: { Location: REPO_URL } });
   } else {
     const err = await inviteRes.json().catch(() => ({}));
     return redirect(pagesUrl, 'error',
